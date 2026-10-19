@@ -14,9 +14,10 @@ a build step, Next.js static export (`out`).
 ## Once, for the organization
 
 1. Organization **Settings → Actions → General → Workflow permissions**: Read and write.
-2. Organization **Settings → Secrets and variables → Actions**, secrets for all repositories:
-   - `COOLIFY_BASE_URL`: the Coolify dashboard address.
-   - `COOLIFY_TOKEN`: a Coolify API token with deploy permission.
+2. Secrets `COOLIFY_BASE_URL` (the Coolify dashboard address) and `COOLIFY_TOKEN` (a Coolify API token with
+   deploy permission). On GitHub Free, organization secrets only reach **public** repositories: a private site
+   repository needs them as its own repository secrets (step 4 of *Adding a site*). On a paid plan, set them once
+   in the organization for all repositories.
 3. This repository is public (nothing secret in it), and so is the `static-site-base` package
    (**Packages → static-site-base → Package settings → Change visibility → Public**), so every site's
    build can pull it.
@@ -33,8 +34,12 @@ a build step, Next.js static export (`out`).
    - Domains: `https://example.com,https://www.example.com`.
    - Health check path `/healthz`.
    - Deploy, then copy the resource's UUID from its URL.
-4. Repository **Settings → Secrets and variables → Actions → Variables**: `COOLIFY_RESOURCE_UUID` = that
-   UUID. From now on every push to `main` builds and redeploys the site.
+4. Repository **Settings → Secrets and variables → Actions**:
+   - **Variables**: `COOLIFY_RESOURCE_UUID` = that UUID (a variable of each site, not an organization secret).
+   - **Secrets**, for a private repository on GitHub Free: `COOLIFY_BASE_URL` and `COOLIFY_TOKEN`.
+
+   From now on every push to `main` builds and redeploys the site. Until all three are set, the workflow still
+   pushes the image and skips the Coolify step.
 5. **DNS** (Cloudflare, proxied): `@` and `www` A records to the server. SSL/TLS mode **Full (strict)**.
 
 ## Rolling back
