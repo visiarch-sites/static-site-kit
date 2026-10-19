@@ -1,0 +1,93 @@
+# Reusable: builds a static site, packs its output into an image on the shared Nginx base, pushes it to
+# ghcr.io/<org>/<repo>, and tells Coolify to redeploy. Called from each site's repository:
+#
+#   jobs:
+#     deploy:
+#       uses: visiarch-sites/static-site-kit/.github/workflows/deploy.yml@v1
+#       secrets: inherit
+#
+# Organization secrets: COOLIFY_BASE_URL, COOLIFY_TOKEN.
+# Repository variable: COOLIFY_RESOURCE_UUID (the site's resource in Coolify; without it the image is
+# pushed and the deploy step is skipped, which is how a new site starts).
+name: Deploy static site
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js version for the build.
+        type: string
+        default: "24"
+      build-command:
+        description: Command that writes the site to output-dir.
+        type: string
+        default: npm run build
+      output-dir:
+        description: Folder with the built site.
+        type: string
+        default: dist
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+
+      - run: npm ci
+
+      - run: ${{ inputs.build-command }}
+
+      - name: Image recipe
+        run: |
+          printf 'FROM ghcr.io/%s/static-site-base:latest\nCOPY %s/ /usr/share/nginx/html/\n' \
+            "${{ github.repository_owner }}" "${{ inputs.output-dir }}" > Dockerfile.site
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.site
+          push: true
+          # "latest" is what Coolify runs; the commit tag is kept for rollbacks.
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:sha-${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # Job-level env: a step's own env is not visible to that step's `if`.
+    env:
+      COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
+    steps:
+      - name: Trigger Coolify deployment
+        if: env.COOLIFY_BASE_URL != '' && env.COOLIFY_TOKEN != '' && env.COOLIFY_RESOURCE_UUID != ''
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --retry 3 --retry-delay 5 \
+            -X POST "${COOLIFY_BASE_URL%/}/api/v1/deploy?uuid=${COOLIFY_RESOURCE_UUID}&force=false" \
+            -H "Authorization: Bearer $COOLIFY_TOKEN"
+
+      - name: Not deployed yet
+        if: env.COOLIFY_RESOURCE_UUID == ''
+        run: echo "::notice::Image pushed. Create the site in Coolify, then set the repository variable COOLIFY_RESOURCE_UUID to deploy on every push."

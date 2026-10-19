@@ -1,0 +1,18 @@
+# Copy into a site's repository as .github/workflows/deploy.yml.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    permissions:
+      contents: read
+      packages: write
+    uses: visiarch-sites/static-site-kit/.github/workflows/deploy.yml@v1
+    secrets: inherit
+    # with:
+    #   output-dir: dist          # build/ for Vite + React, out/ for Next.js export
+    #   build-command: npm run build
